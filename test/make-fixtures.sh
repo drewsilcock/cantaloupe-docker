@@ -23,13 +23,27 @@ rm -f source8.v
 
 tiled="tile,tile-width=256,tile-height=256,pyramid,compression=jpeg,Q=90"
 
-# Tiled + pyramidal, levels stored as PAGES (libvips default) — the layout
-# Cantaloupe needs to serve reduced-resolution requests from the pyramid.
+# The 2x2 that the pyramid-layout tests assert on: {classic, BigTIFF} x {pages,
+# sub-IFDs}. libvips stores levels as pages by default and as sub-IFDs with
+# `subifd` — and that single flag is what decides whether Cantaloupe can use the
+# pyramid at all. See "Serving TIFF" in the README.
+
+# Tiled + pyramidal, levels stored as PAGES — the layout Cantaloupe needs to
+# serve reduced-resolution requests from the pyramid.
 vips copy source.v pyramid.tif"[$tiled]"
 
 # Same, but BigTIFF. Cantaloupe reads these fine; the folklore that it cannot is
-# really about *sub-IFD* pyramids, which are a different thing (see README).
+# really about *sub-IFD* pyramids, which are a different thing.
 vips copy source.v pyramid-bigtiff.tif"[$tiled,bigtiff]"
+
+# Levels as SUB-IFDs. Parses, but Cantaloupe ignores the pyramid and decodes the
+# full-resolution base for every request.
+vips copy source.v pyramid-subifd.tif"[$tiled,subifd]"
+
+# BigTIFF + sub-IFDs: the combination that actually breaks. A BigTIFF sub-IFD
+# pyramid stores its offsets as TIFF type 18 (IFD8), which the bundled reader
+# cannot parse.
+vips copy source.v pyramid-subifd-bigtiff.tif"[$tiled,subifd,bigtiff]"
 
 # Plain, non-pyramidal formats, to cover the ordinary paths.
 vips copy source.v plain.jpg"[Q=85]"

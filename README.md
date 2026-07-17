@@ -78,6 +78,15 @@ vips copy in.tif out.tif[tile,tile-width=256,tile-height=256,pyramid,compression
 
 Verify with `vipsheader -a out.tif`: it should report `n-pages`, not `n-subifds`.
 
+This is asserted by the tests, not folklore. Cantaloupe logs the resolution it
+decodes from, so `test/run-tests.sh` asks each fixture for `/full/200,` (from a
+1600x1200 source with a 200x150 level) and checks the log:
+
+```
+pyramid.tif         Acquiring region 0,0/200x150 from 200x150 image      <- uses the pyramid
+pyramid-subifd.tif  Acquiring region 0,0/1600x1200 from 1600x1200 image  <- decodes the base
+```
+
 ## What's not included
 
 | Omitted | Why |
@@ -110,8 +119,8 @@ IMAGE=ghcr.io/drewsilcock/cantaloupe:5.0.7 ./test/run-tests.sh   # test a publis
 ```
 
 Starts a container, serves the committed fixtures in `test/fixtures/` (pyramidal
-TIFF, BigTIFF, JPEG, PNG, JP2) over the IIIF Image API, and checks the bytes that
-come back — including that the returned JPEG really has the requested dimensions,
+TIFF, BigTIFF, JPEG, PNG, JP2, plus sub-IFD variants of the TIFFs) over the IIIF
+Image API, and checks the bytes that come back — including that the returned JPEG really has the requested dimensions,
 parsed from its SOF marker. A 200 alone proves little: the failure mode seen in
 the wild is 200 with an empty body.
 
