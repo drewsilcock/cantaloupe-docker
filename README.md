@@ -78,17 +78,6 @@ vips copy in.tif out.tif[tile,tile-width=256,tile-height=256,pyramid,compression
 
 Verify with `vipsheader -a out.tif`: it should report `n-pages`, not `n-subifds`.
 
-**BigTIFF is fine** — despite folklore to the contrary. Measured against 5.0.7:
-
-| | page-based pyramid | sub-IFD pyramid |
-| --- | --- | --- |
-| classic TIFF | works, uses pyramid | works, but decodes base (slow) |
-| BigTIFF | works, uses pyramid | **500** `ArrayIndexOutOfBoundsException: Index 18` |
-
-The 500 is the bundled TIFF reader hitting type 18 (`IFD8`), which only a
-*BigTIFF sub-IFD* pyramid uses — so it is caused by sub-IFDs, not by BigTIFF.
-Classic TIFF caps at 4 GB; use BigTIFF above that.
-
 ## What's not included
 
 | Omitted | Why |
@@ -96,10 +85,6 @@ Classic TIFF caps at 4 GB; use BigTIFF above that.
 | `ffmpeg` | Only for `FfmpegProcessor`, which extracts still frames from **video**. Costs ~316 MB across ~282 packages. |
 | `libtiff` | TIFF is decoded in pure Java by `Java2dProcessor`. The C library is only needed by the Kakadu binaries. |
 | Kakadu | Proprietary, and its libraries are Linux-x86-64 only — it could never run on arm64. JPEG2000 is handled by `OpenJpegProcessor` instead (`libopenjp2-tools` **is** included). |
-| python/perl | Nothing here needs them. |
-
-Need one of these? Add the package to the Dockerfile and rebuild — the image is
-deliberately short enough to read in one sitting.
 
 ## JPEG2000
 
@@ -130,9 +115,7 @@ come back — including that the returned JPEG really has the requested dimensio
 parsed from its SOF marker. A 200 alone proves little: the failure mode seen in
 the wild is 200 with an empty body.
 
-Needs only docker, curl and python3. The fixtures are committed; regenerate them
-with `./test/make-fixtures.sh` (needs libvips). CI runs these on every push and
-pull request, and publishing is gated on them passing.
+Tests require docker, curl, and python3.
 
 ## Licence
 
