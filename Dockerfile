@@ -85,7 +85,17 @@ ENV CONFIG_FILE=/etc/cantaloupe.properties \
     # Stock sample ships 10 MP, which caps the sizes advertised in info.json and
     # is low for large heritage masters.
     MAX_PIXELS=100000000 \
-    FILESYSTEMCACHE_PATHNAME=/var/cache/cantaloupe
+    FILESYSTEMCACHE_PATHNAME=/var/cache/cantaloupe \
+    # JPEG2000 must be pinned to OpenJPEG. The automatic strategy tries
+    # KakaduNativeProcessor first and, when its JNI library is absent — as it is
+    # here, and in any build without a Kakadu licence — does not fall back: it
+    # throws `UnsatisfiedLinkError: no kdu_jni in java.library.path` and every
+    # JP2 request 500s. Selecting manually is the only way to reach the
+    # OpenJPEG decoder we actually ship.
+    PROCESSOR_SELECTION_STRATEGY=ManualSelectionStrategy \
+    PROCESSOR_MANUALSELECTIONSTRATEGY_JP2=OpenJpegProcessor \
+    # Everything else (TIFF, JPEG, PNG, …) goes to the pure-Java processor.
+    PROCESSOR_MANUALSELECTIONSTRATEGY_FALLBACK=Java2dProcessor
 
 USER cantaloupe
 EXPOSE 8182

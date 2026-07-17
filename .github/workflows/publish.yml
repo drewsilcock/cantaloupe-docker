@@ -1,8 +1,7 @@
-name: Publish image
+name: Test and publish
 
-# Builds linux/amd64 + linux/arm64 and pushes to GHCR. arm64 layers build under
-# QEMU emulation, which is fine here because the build is only apt + unzip —
-# nothing is compiled.
+# Tests run against a real container serving real images before anything is
+# published, so a broken image cannot reach the registry.
 
 on:
   push:
@@ -18,14 +17,42 @@ on:
         default: "5.0.7"
 
 env:
-  # ghcr.io/<owner>/<repo> — the GHCR convention, and it keeps the package bound
-  # to this repository (a package created by a different repo rejects pushes
-  # from here with `denied: permission_denied: write_package`).
-  IMAGE: ghcr.io/${{ github.repository }}
+  # ghcr.io/<owner>/cantaloupe
+  IMAGE: ghcr.io/${{ github.repository_owner }}/cantaloupe
   CANTALOUPE_VERSION: ${{ github.event.inputs.cantaloupe_version || '5.0.7' }}
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build the native (amd64) image into the local daemon so the tests can
+      # actually run it. The arm64 variant is built in the publish job; a
+      # multi-arch image cannot be loaded into the daemon.
+      - name: Build image for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: cantaloupe-test:local
+          build-args: CANTALOUPE_VERSION=${{ env.CANTALOUPE_VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run tests
+        env:
+          IMAGE: cantaloupe-test:local
+          IMAGE_PREBUILT: "1"
+        run: ./test/run-tests.sh
+
   publish:
+    name: Publish
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,13 +65,9 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      # Pushing is skipped on pull_request: the token is read-only there, and a
-      # PR should not publish. The build still runs, so breakage is caught.
       - name: Log in to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -56,11 +79,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE }}
-          # `latest` only from the default branch; version tags from git tags.
           tags: |
             type=raw,value=${{ env.CANTALOUPE_VERSION }},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=pr
             type=semver,pattern={{version}}
 
       - name: Build and push
@@ -69,30 +90,11 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           build-args: CANTALOUPE_VERSION=${{ env.CANTALOUPE_VERSION }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # A published image that cannot serve an image is worthless, so prove the
-      # freshly built amd64 image starts and answers before calling it a success.
-      - name: Smoke test
-        if: github.event_name != 'pull_request'
-        run: |
-          docker run -d --name smoke -p 8182:8182 \
-            -e SOURCE_STATIC=FilesystemSource \
-            -e FILESYSTEMSOURCE_BASICLOOKUPSTRATEGY_PATH_PREFIX=/imageroot/ \
-            "${IMAGE}:${CANTALOUPE_VERSION}"
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8182/iiif/3 || true)
-            [ "$code" = "200" ] || [ "$code" = "404" ] && break
-            sleep 2
-          done
-          docker logs smoke
-          test "$code" = "200" -o "$code" = "404" || { echo "server never came up"; exit 1; }
-          echo "OK: server responded ($code)"
-
       - name: Show published manifest
-        if: github.event_name != 'pull_request'
         run: docker buildx imagetools inspect "${IMAGE}:${CANTALOUPE_VERSION}"

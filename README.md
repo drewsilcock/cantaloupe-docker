@@ -4,7 +4,7 @@ A small, multi-arch container image for the [Cantaloupe](https://cantaloupe-proj
 IIIF Image API server.
 
 ```
-docker run -p 8182:8182 -v /path/to/images:/imageroot ghcr.io/drewsilcock/cantaloupe-docker:latest
+docker run -p 8182:8182 -v /path/to/images:/imageroot ghcr.io/drewsilcock/cantaloupe:latest
 ```
 
 - **linux/amd64 + linux/arm64** — runs natively on Apple Silicon and arm64 servers.
@@ -95,11 +95,44 @@ Classic TIFF caps at 4 GB; use BigTIFF above that.
 | ------- | --- |
 | `ffmpeg` | Only for `FfmpegProcessor`, which extracts still frames from **video**. Costs ~316 MB across ~282 packages. |
 | `libtiff` | TIFF is decoded in pure Java by `Java2dProcessor`. The C library is only needed by the Kakadu binaries. |
-| Kakadu | Proprietary, and its libraries are Linux-x86-64 only — it could never run on arm64. JPEG2000 falls back to `OpenJpegProcessor` (`libopenjp2-tools` is included). |
+| Kakadu | Proprietary, and its libraries are Linux-x86-64 only — it could never run on arm64. JPEG2000 is handled by `OpenJpegProcessor` instead (`libopenjp2-tools` **is** included). |
 | python/perl | Nothing here needs them. |
 
 Need one of these? Add the package to the Dockerfile and rebuild — the image is
 deliberately short enough to read in one sitting.
+
+## JPEG2000
+
+JP2 works, but it needs pinning — which this image does for you:
+
+```
+PROCESSOR_SELECTION_STRATEGY=ManualSelectionStrategy
+PROCESSOR_MANUALSELECTIONSTRATEGY_JP2=OpenJpegProcessor
+PROCESSOR_MANUALSELECTIONSTRATEGY_FALLBACK=Java2dProcessor
+```
+
+Cantaloupe's default `AutomaticSelectionStrategy` tries `KakaduNativeProcessor`
+first for JP2 and, when the Kakadu JNI library is missing — as it is in any build
+without a Kakadu licence — it does **not** fall back. Every JP2 request 500s with
+`UnsatisfiedLinkError: no kdu_jni in java.library.path`. Shipping the OpenJPEG
+decoder is not enough on its own; it has to be selected.
+
+## Tests
+
+```
+./test/run-tests.sh                          # build and test locally
+IMAGE=ghcr.io/drewsilcock/cantaloupe:5.0.7 ./test/run-tests.sh   # test a published image
+```
+
+Starts a container, serves the committed fixtures in `test/fixtures/` (pyramidal
+TIFF, BigTIFF, JPEG, PNG, JP2) over the IIIF Image API, and checks the bytes that
+come back — including that the returned JPEG really has the requested dimensions,
+parsed from its SOF marker. A 200 alone proves little: the failure mode seen in
+the wild is 200 with an empty body.
+
+Needs only docker, curl and python3. The fixtures are committed; regenerate them
+with `./test/make-fixtures.sh` (needs libvips). CI runs these on every push and
+pull request, and publishing is gated on them passing.
 
 ## Licence
 
