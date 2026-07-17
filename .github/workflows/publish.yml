@@ -18,7 +18,10 @@ on:
         default: "5.0.7"
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/cantaloupe
+  # ghcr.io/<owner>/<repo> — the GHCR convention, and it keeps the package bound
+  # to this repository (a package created by a different repo rejects pushes
+  # from here with `denied: permission_denied: write_package`).
+  IMAGE: ghcr.io/${{ github.repository }}
   CANTALOUPE_VERSION: ${{ github.event.inputs.cantaloupe_version || '5.0.7' }}
 
 jobs:

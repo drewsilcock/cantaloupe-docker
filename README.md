@@ -4,7 +4,7 @@ A small, multi-arch container image for the [Cantaloupe](https://cantaloupe-proj
 IIIF Image API server.
 
 ```
-docker run -p 8182:8182 -v /path/to/images:/imageroot ghcr.io/drewsilcock/cantaloupe:latest
+docker run -p 8182:8182 -v /path/to/images:/imageroot ghcr.io/drewsilcock/cantaloupe-docker:latest
 ```
 
 - **linux/amd64 + linux/arm64** — runs natively on Apple Silicon and arm64 servers.
