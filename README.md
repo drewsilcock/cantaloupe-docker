@@ -1,5 +1,7 @@
 # cantaloupe-docker
 
+[![Test and Publish](https://github.com/drewsilcock/cantaloupe-docker/actions/workflows/publish.yml/badge.svg)](https://github.com/drewsilcock/cantaloupe-docker/actions/workflows/publish.yml)
+
 A small, multi-arch container image for the [Cantaloupe](https://cantaloupe-project.github.io/)
 IIIF Image API server.
 
