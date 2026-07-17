@@ -1,0 +1,95 @@
+name: Publish image
+
+# Builds linux/amd64 + linux/arm64 and pushes to GHCR. arm64 layers build under
+# QEMU emulation, which is fine here because the build is only apt + unzip —
+# nothing is compiled.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      cantaloupe_version:
+        description: "Cantaloupe release to package"
+        required: true
+        default: "5.0.7"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/cantaloupe
+  CANTALOUPE_VERSION: ${{ github.event.inputs.cantaloupe_version || '5.0.7' }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Pushing is skipped on pull_request: the token is read-only there, and a
+      # PR should not publish. The build still runs, so breakage is caught.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          # `latest` only from the default branch; version tags from git tags.
+          tags: |
+            type=raw,value=${{ env.CANTALOUPE_VERSION }},enable={{is_default_branch}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: CANTALOUPE_VERSION=${{ env.CANTALOUPE_VERSION }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A published image that cannot serve an image is worthless, so prove the
+      # freshly built amd64 image starts and answers before calling it a success.
+      - name: Smoke test
+        if: github.event_name != 'pull_request'
+        run: |
+          docker run -d --name smoke -p 8182:8182 \
+            -e SOURCE_STATIC=FilesystemSource \
+            -e FILESYSTEMSOURCE_BASICLOOKUPSTRATEGY_PATH_PREFIX=/imageroot/ \
+            "${IMAGE}:${CANTALOUPE_VERSION}"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8182/iiif/3 || true)
+            [ "$code" = "200" ] || [ "$code" = "404" ] && break
+            sleep 2
+          done
+          docker logs smoke
+          test "$code" = "200" -o "$code" = "404" || { echo "server never came up"; exit 1; }
+          echo "OK: server responded ($code)"
+
+      - name: Show published manifest
+        if: github.event_name != 'pull_request'
+        run: docker buildx imagetools inspect "${IMAGE}:${CANTALOUPE_VERSION}"
